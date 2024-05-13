@@ -195,7 +195,7 @@ def run():
                                     inputs=[view_selector_content, view_result_selector],
                                     outputs=viewer)
 
-    server_port = int(os.environ.get("GRADIO_SERVER_PORT", "7860"))
+    server_port = int(os.environ.get("GRADIO_SERVER_PORT", "7862"))
     demo.launch(server_name="0.0.0.0", server_port=server_port, share=False)
 
 

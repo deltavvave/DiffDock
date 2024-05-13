@@ -14,7 +14,6 @@ dependencies:
     - --find-links https://pytorch-geometric.com/whl/torch-1.13.1+cu117.html
     - torch==1.13.1+cu117
   - pip:
-    - --extra-index-url https://download.pytorch.org/whl/cu117
     - --find-links https://pytorch-geometric.com/whl/torch-1.13.1+cu117.html
     - dllogger @ git+https://github.com/NVIDIA/dllogger.git
     - e3nn==0.5.1
