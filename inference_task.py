@@ -22,7 +22,9 @@ from utils.utils import get_model
 from utils.visualise import PDBFile
 from datasets.process_mols import write_mol_with_coords
 from schemas import InferenceInput, InferenceConfig
-import uuid
+import io
+from zipfile import ZipFile
+from fastapi.responses import StreamingResponse
 
 RDLogger.DisableLog('rdApp.*')
 
@@ -48,17 +50,17 @@ def display_progress(task_id: str, phase: str):
     progress_bar = "[" + "|".join(["=>" if phase == p else " " for p in phases]) + "]"
     progress_dict[task_id] = f"Progress: {progress_bar} {phase}"
 
-async def run_inference_task(task_id: str, input: InferenceInput, config: InferenceConfig, background_tasks: BackgroundTasks = None):
+async def run_inference_task(task_id: str, input: InferenceInput, config: InferenceConfig, background_tasks: BackgroundTasks):
     configure_logger(config.loglevel)
     logger = get_logger()
-
-    display_progress(task_id, "Downloading Models")
 
     # Check if CUDA is available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logger.info(f"DiffDock will run on {device}")
 
-    # Download models if not found locally
+    # Update progress
+    progress_dict[task_id] = "Downloading Models"
+    
     if not os.path.exists(config.model_dir):
         logger.info(f"Models not found. Downloading")
         downloaded_successfully = False
@@ -76,34 +78,27 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
                 logger.error(f"Failed to download from {remote_url}: {str(e)}")
         
         if not downloaded_successfully:
-            raise Exception(f"Models not found locally and failed to download them from {REMOTE_URLS}")
+            progress_dict[task_id] = "Failed: Models not found locally and failed to download"
+            return
 
-    # Create output directory if not exists
     os.makedirs(config.out_dir, exist_ok=True)
 
-    # Initialize logger for downloading models
     with open(f'{config.model_dir}/model_parameters.yml') as f:
         score_model_args = Namespace(**yaml.full_load(f))
     if config.confidence_model_dir:
         with open(f'{config.confidence_model_dir}/model_parameters.yml') as f:
             confidence_args = Namespace(**yaml.full_load(f))
 
-    display_progress(task_id, "Setting up Environment")
-
-    # Read input data
     complex_name_list = [input.protein_path if input.protein_path else f"complex_0"]
     protein_path_list = [input.protein_path]
     protein_sequence_list = [input.protein_sequence]
     ligand_description_list = [input.ligand_description]
 
-    # Initialize directories for output files
     for name in complex_name_list:
         write_dir = f'{config.out_dir}/{name}'
         os.makedirs(write_dir, exist_ok=True)
 
-    display_progress(task_id, "Loading Data")
-
-    # Load test dataset
+    progress_dict[task_id] = "Preprocessing Data"
     test_dataset = InferenceDataset(
         out_dir=config.out_dir,
         complex_names=complex_name_list,
@@ -121,7 +116,6 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
     )
     test_loader = DataLoader(dataset=test_dataset, batch_size=config.batch_size, shuffle=False)
 
-    # Load confidence dataset
     if config.confidence_model_dir and not confidence_args.use_original_model_cache:
         logger.info('Confidence model uses different type of graphs than the score model. Loading (or creating if not existing) the data for the confidence model now.')
         confidence_test_dataset = InferenceDataset(
@@ -145,16 +139,12 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
 
     t_to_sigma = partial(t_to_sigma_compl, args=score_model_args)
 
-    display_progress(task_id, "Initializing Models")
-
-    # Initialize scoring model
     model = get_model(score_model_args, device, t_to_sigma=t_to_sigma, no_parallel=True, old=config.old_score_model)
     state_dict = torch.load(f'{config.model_dir}/{config.ckpt}', map_location=device)
     model.load_state_dict(state_dict, strict=True)
     model = model.to(device)
     model.eval()
 
-    # Initialize confidence model
     if config.confidence_model_dir:
         confidence_model = get_model(confidence_args, device, t_to_sigma=t_to_sigma, no_parallel=True, confidence_mode=True, old=config.old_confidence_model)
         state_dict = torch.load(f'{config.confidence_model_dir}/{config.confidence_ckpt}', map_location=device)
@@ -167,14 +157,13 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
 
     tr_schedule = get_t_schedule(inference_steps=config.inference_steps, sigma_schedule='expbeta')
 
-    display_progress(task_id, "Running Inference")
-
     failures, skipped = 0, 0
     N = config.samples_per_complex
     test_ds_size = len(test_dataset)
     logger.info(f'Size of test dataset: {test_ds_size}')
 
     for idx, orig_complex_graph in tqdm(enumerate(test_loader)):
+        progress_dict[task_id] = f"Processing Complex {idx+1}/{test_ds_size}"
         if not orig_complex_graph.success[0]:
             skipped += 1
             logger.warning(f"The test dataset did not contain {test_dataset.complex_names[idx]} for {test_dataset.ligand_descriptions[idx]} and {test_dataset.protein_files[idx]}. We are skipping this complex.")
@@ -211,7 +200,7 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
             data_list, confidence = sampling(data_list=data_list, model=model,
                                              inference_steps=config.actual_steps if config.actual_steps is not None else config.inference_steps,
                                              tr_schedule=tr_schedule, rot_schedule=tr_schedule, tor_schedule=tr_schedule,
-                                             device=device, t_to_sigma=partial(t_to_sigma_compl, args=score_model_args), model_args=score_model_args,
+                                             device=device, t_to_sigma=t_to_sigma, model_args=score_model_args,
                                              visualization_list=visualization_list, confidence_model=confidence_model,
                                              confidence_data_list=confidence_data_list, confidence_model_args=confidence_args,
                                              batch_size=config.batch_size, no_final_step_noise=config.no_final_step_noise,
@@ -250,6 +239,18 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
             logger.warning(f"Failed on {orig_complex_graph['name']}: {str(e)}")
             failures += 1
 
+    result_msg = f"""
+    Failed for {failures} / {test_ds_size} complexes.
+    Skipped {skipped} / {test_ds_size} complexes.
+"""
+    if failures or skipped:
+        logger.warning(result_msg)
+    else:
+        logger.info(result_msg)
+    
+    progress_dict[task_id] = "Completed"
+    logger.info(f"Results saved in {config.out_dir}")
+
     display_progress(task_id, "Post-processing Results")
 
     result_msg = f"""
@@ -264,3 +265,16 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
 
     # Clean up progress entry after completion
     del progress_dict[task_id]
+    
+def zip_output_files(task_id: str, output_folder: str):
+    zip_stream = io.BytesIO()
+    with ZipFile(zip_stream, 'w') as zip_file:
+        for subfolder in os.listdir(output_folder):
+            subfolder_path = os.path.join(output_folder, subfolder)
+            if os.path.isdir(subfolder_path):
+                for generated_file in os.listdir(subfolder_path):
+                    generated_file_path = os.path.join(subfolder_path, generated_file)
+                    zip_file.write(generated_file_path, os.path.relpath(generated_file_path, output_folder))
+
+    zip_stream.seek(0)
+    return zip_stream    
