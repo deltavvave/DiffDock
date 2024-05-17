@@ -47,7 +47,7 @@ warnings.filterwarnings("ignore", category=UserWarning,
 
 # Prody logging is very verbose by default
 prody_logger = logging.getLogger(".prody")
-prody_logger.setLevel(logging.ERROR)
+prody_logger.setLevel(logging.DEBUG)
 
 REPOSITORY_URL = os.environ.get("REPOSITORY_URL", "https://github.com/gcorso/DiffDock")
 REMOTE_URLS = [f"{REPOSITORY_URL}/releases/latest/download/diffdock_models.zip",
@@ -63,7 +63,7 @@ def get_parser():
     parser.add_argument('--protein_sequence', type=str, default=None, help='Sequence of the protein for ESMFold, this is ignored if --protein_path is not None')
     parser.add_argument('--ligand_description', type=str, default='CCCCC(NC(=O)CCC(=O)O)P(=O)(O)OC1=CC=CC=C1', help='Either a SMILES string or the path to a molecule file that rdkit can read')
 
-    parser.add_argument('-l', '--log', '--loglevel', type=str, default='WARNING', dest="loglevel",
+    parser.add_argument('-l', '--log', '--loglevel', type=str, default='DEBUG', dest="loglevel",
                         help='Log level. Default %(default)s')
 
     parser.add_argument('--out_dir', type=str, default='results/user_inference', help='Directory where the outputs will be written to')
@@ -149,6 +149,17 @@ def main(args):
         with open(f'{args.confidence_model_dir}/model_parameters.yml') as f:
             confidence_args = Namespace(**yaml.full_load(f))
 
+    # Check if CUDA is available
+    if torch.cuda.is_available():
+        print("CUDA is available! 🎉")
+        # Optionally, you can get the number of GPUs available and their names
+        num_gpus = torch.cuda.device_count()
+        print(f"Number of GPUs available: {num_gpus}")
+        for i in range(num_gpus):
+            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+    else:
+        print("CUDA is not available.")
+        
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logger.info(f"DiffDock will run on {device}")
 

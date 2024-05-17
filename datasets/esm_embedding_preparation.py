@@ -7,15 +7,24 @@ from Bio.SeqRecord import SeqRecord
 from tqdm import tqdm
 from Bio import SeqIO
 
+
+
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import utils.xpdb as xpdb  # this is the module described below
+
+
 from datasets.constants import three_to_one
 
 parser = ArgumentParser()
-parser.add_argument('--out_file', type=str, default="data/prepared_for_esm.fasta")
-parser.add_argument('--dataset', type=str, default="pdbbind")
-parser.add_argument('--data_dir', type=str, default='../data/BindingMOAD_2020_ab_processed_biounit/pdb_protein/', help='')
+parser.add_argument('--out_file', type=str, default="/root/projects/DiffDock/data/prep_esm_moad.fasta")
+parser.add_argument('--dataset', type=str, default="moad")
+
+parser.add_argument('--data_dir', type=str, default='/root/projects/DiffDock/data/BindingMOAD_2020_processed/pdb_protein/', help='') #defaut path initially: '../data/BindingMOAD_2020_processed/pdb_protein/'
 args = parser.parse_args()
 
-biopython_parser = PDBParser()
+biopython_parser = PDBParser(structure_builder=xpdb.SloppyStructureBuilder())
 
 
 def get_structure_from_file(file_path):
@@ -54,6 +63,7 @@ if args.dataset == 'pdbbind':
 
     for name in tqdm(names):
         if name == '.DS_Store': continue
+        if name =='1a50': continue
         if os.path.exists(os.path.join(data_dir, name, f'{name}_protein_processed.pdb')):
             rec_path = os.path.join(data_dir, name, f'{name}_protein_processed.pdb')
         else:
@@ -70,7 +80,8 @@ if args.dataset == 'pdbbind':
     SeqIO.write(records, args.out_file, "fasta")
 
 elif args.dataset == 'moad':
-    names = [n[:6] for n in names]
+    names = [n[:6] for n in names if not n.startswith('.')]
+    #names = [n[:6] for n in names]
     name_to_sequence = {}
 
     for name in tqdm(names):
