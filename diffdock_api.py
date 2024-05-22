@@ -1,12 +1,14 @@
-from fastapi import FastAPI, BackgroundTasks
+#diffdock_api.py
+from fastapi import FastAPI, BackgroundTasks, File, UploadFile, Form
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from inference_task import run_inference_task, progress_dict, zip_output_files
-from schemas import InferenceInput, InferenceConfig
+from schemas import InferenceInput, InferenceConfig, InferenceRequest
 import uuid
 import os
 from zipfile import ZipFile
-
+import io
+import json
 
 app = FastAPI()
 
@@ -46,3 +48,34 @@ async def download_results(task_id: str):
         "Content-Disposition": f"attachment; filename={task_id}_output.zip"
     }
     return StreamingResponse(zip_stream, media_type='application/zip', headers=headers)
+
+@app.post("/inference/zip/")
+async def start_inference_from_zip(zip_file: UploadFile, background_tasks: BackgroundTasks, config: str = Form(...),):
+    task_id = str(uuid.uuid4())
+    zip_path = f"/tmp/{task_id}.zip"
+    
+    with open(zip_path, "wb") as buffer:
+        buffer.write(await zip_file.read())
+    
+    config_data = json.loads(config)
+    inference_config = InferenceConfig(**config_data)
+    
+    background_tasks.add_task(process_zip_and_run_inference, task_id, zip_path, inference_config)
+    return JSONResponse(content={"message": "Inference process started successfully for zip file", "task_id": task_id})
+
+async def process_zip_and_run_inference(task_id: str, zip_path: str, config: InferenceConfig):
+    with ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(f"/tmp/{task_id}")
+
+    input_dir = f"/tmp/{task_id}"
+    pdb_files = [f for f in os.listdir(input_dir) if f.endswith('.pdb')]
+    sdf_files = [f for f in os.listdir(input_dir) if f.endswith('.sdf')]
+
+    for pdb_file in pdb_files:
+        corresponding_sdf = pdb_file.replace('.pdb', '.sdf')
+        if corresponding_sdf in sdf_files:
+            inference_input = InferenceInput(
+                protein_path=os.path.join(input_dir, pdb_file),
+                ligand_description=os.path.join(input_dir, corresponding_sdf)
+            )
+            await run_inference_task(task_id, inference_input, config, None)

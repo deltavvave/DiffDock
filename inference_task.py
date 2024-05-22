@@ -1,5 +1,3 @@
-# inference_task.py
-
 import logging
 import os
 import yaml
@@ -18,6 +16,7 @@ from utils.logging_utils import configure_logger, get_logger
 from utils.inference_utils import InferenceDataset, set_nones
 from utils.diffusion_utils import t_to_sigma as t_to_sigma_compl, get_t_schedule
 from utils.sampling import randomize_position, sampling
+from utils.download import download_and_extract
 from utils.utils import get_model
 from utils.visualise import PDBFile
 from datasets.process_mols import write_mol_with_coords
@@ -59,7 +58,7 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
     logger.info(f"DiffDock will run on {device}")
 
     # Update progress
-    progress_dict[task_id] = "Downloading Models"
+    await display_progress(task_id, "Downloading Models")
     
     if not os.path.exists(config.model_dir):
         logger.info(f"Models not found. Downloading")
@@ -98,7 +97,7 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
         write_dir = f'{config.out_dir}/{name}'
         os.makedirs(write_dir, exist_ok=True)
 
-    progress_dict[task_id] = "Preprocessing Data"
+    await display_progress(task_id, "Preprocessing Data")
     test_dataset = InferenceDataset(
         out_dir=config.out_dir,
         complex_names=complex_name_list,
@@ -139,6 +138,7 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
 
     t_to_sigma = partial(t_to_sigma_compl, args=score_model_args)
 
+    await display_progress(task_id, "Initializing Models")
     model = get_model(score_model_args, device, t_to_sigma=t_to_sigma, no_parallel=True, old=config.old_score_model)
     state_dict = torch.load(f'{config.model_dir}/{config.ckpt}', map_location=device)
     model.load_state_dict(state_dict, strict=True)
@@ -163,7 +163,7 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
     logger.info(f'Size of test dataset: {test_ds_size}')
 
     for idx, orig_complex_graph in tqdm(enumerate(test_loader)):
-        progress_dict[task_id] = f"Processing Complex {idx+1}/{test_ds_size}"
+        await display_progress(task_id, f"Processing Complex {idx+1}/{test_ds_size}")
         if not orig_complex_graph.success[0]:
             skipped += 1
             logger.warning(f"The test dataset did not contain {test_dataset.complex_names[idx]} for {test_dataset.ligand_descriptions[idx]} and {test_dataset.protein_files[idx]}. We are skipping this complex.")
@@ -265,7 +265,7 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
 
     # Clean up progress entry after completion
     del progress_dict[task_id]
-    
+
 def zip_output_files(task_id: str, output_folder: str):
     zip_stream = io.BytesIO()
     with ZipFile(zip_stream, 'w') as zip_file:
@@ -277,4 +277,4 @@ def zip_output_files(task_id: str, output_folder: str):
                     zip_file.write(generated_file_path, os.path.relpath(generated_file_path, output_folder))
 
     zip_stream.seek(0)
-    return zip_stream    
+    return zip_stream

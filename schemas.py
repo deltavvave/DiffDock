@@ -1,5 +1,8 @@
 from pydantic import BaseModel
 from typing import Optional
+from fastapi import UploadFile
+
+
 
 class InferenceInput(BaseModel):
     protein_path: str
@@ -42,3 +45,11 @@ class InferenceConfig(BaseModel):
     out_dir: str = 'results/user_inference'
     save_visualisation: bool = False
     batch_size: int = 10
+    
+class InferenceRequest(BaseModel):
+    input: InferenceInput
+    config: InferenceConfig
+    
+class ZipInputConfig(BaseModel):
+    zip_file: UploadFile
+    inference_config: InferenceConfig
