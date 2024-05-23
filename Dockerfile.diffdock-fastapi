@@ -30,7 +30,7 @@ RUN ~/bin/micromamba create -n mydiffdock -c conda-forge python=3.9.18 pip && \
 
 # Install specific PyTorch and related packages using micromamba and pip
 RUN ~/bin/micromamba run -n mydiffdock micromamba install -c pytorch -c nvidia -c conda-forge pytorch==1.13.0 pytorch-cuda=11.7 mkl=2024.0.0 cudatoolkit-dev && \
-    ~/bin/micromamba run -n mydiffdock pip install torch-scatter==2.0.9 torch-sparse==0.6.15 torch-cluster==1.6.0 torch-spline-conv==1.2.1 torch-geometric==2.0.4 -f https://data.pyg.org/whl/torch-1.13.0+cu117.html
+    ~/bin/micromamba run -n mydiffdock pip install torch-scatter==2.1.0+pt113cu117 torch-sparse==0.6.15 torch-cluster==1.6.0 torch-spline-conv==1.2.1 torch-geometric==2.0.4 -f https://data.pyg.org/whl/torch-1.13.0+cu117.html
 
 # Explicitly install the packaging module to avoid import errors
 RUN ~/bin/micromamba run -n mydiffdock pip install packaging
