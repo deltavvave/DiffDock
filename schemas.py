@@ -1,8 +1,7 @@
+#schemas.py
 from pydantic import BaseModel
 from typing import Optional
 from fastapi import UploadFile
-
-
 
 class InferenceInput(BaseModel):
     protein_path: str

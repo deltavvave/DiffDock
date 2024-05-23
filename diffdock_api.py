@@ -63,7 +63,7 @@ async def start_inference_from_zip(zip_file: UploadFile, background_tasks: Backg
     background_tasks.add_task(process_zip_and_run_inference, task_id, zip_path, inference_config)
     return JSONResponse(content={"message": "Inference process started successfully for zip file", "task_id": task_id})
 
-async def process_zip_and_run_inference(task_id: str, zip_path: str, config: InferenceConfig):
+async def process_zip_and_run_inference(task_id: str, zip_path: str, config: InferenceConfig): #TODO check precise processing from agent call
     with ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(f"/tmp/{task_id}")
 

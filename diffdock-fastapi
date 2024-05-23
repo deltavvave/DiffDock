@@ -17,18 +17,29 @@ ENV DIR_NAME="DiffDock"
 RUN curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj bin/micromamba
 ENV PATH=$HOME/bin:$HOME/.local/bin:$PATH
 
-# Copy and create Conda environment
-ENV ENV_FILE_NAME=mydiffdock.yml
-COPY --chown=$APPUSER:$APPUSER ./$ENV_FILE_NAME .
-RUN ~/bin/micromamba env create --file $ENV_FILE_NAME && ~/bin/micromamba clean -afy --quiet
+# Create a basic environment with packaging installed
+RUN ~/bin/micromamba create -n base_env python=3.9 pip && \
+    ~/bin/micromamba run -n base_env pip install packaging && \
+    ~/bin/micromamba env export -n base_env --file base_env.yml && \
+    rm -rf ~/micromamba/envs/base_env
+
+# Copy the environment file and create the Conda environment
+COPY --chown=$APPUSER:$APPUSER ./environment.yml environment.yml
+COPY --chown=$APPUSER:$APPUSER ./requirements.txt .
+
+# Install the packaging module first
+RUN ~/bin/micromamba env update --name base --file base_env.yml && \
+    ~/bin/micromamba env create --file environment.yml && \
+    ~/bin/micromamba run -n ${ENV_NAME} pip install packaging
+
+# Install other pip packages
+RUN ~/bin/micromamba run -n ${ENV_NAME} pip install -r requirements.txt
+
+# Clean up micromamba cache
+RUN ~/bin/micromamba clean -afy --quiet
 
 # Copy application code
 COPY --chown=$APPUSER:$APPUSER . $HOME/$DIR_NAME
-
-# Install ESM package
-RUN git clone https://github.com/facebookresearch/esm.git $HOME/esm && \
-    cd $HOME/esm && \
-    ~/bin/micromamba run -n $ENV_NAME pip install -e .
 
 # Stage 2: Runtime Environment
 FROM nvidia/cuda:11.7.1-runtime-ubuntu22.04
@@ -47,7 +58,6 @@ ENV DIR_NAME="DiffDock"
 COPY --from=builder --chown=$APPUSER:$APPUSER $HOME/micromamba $HOME/micromamba
 COPY --from=builder --chown=$APPUSER:$APPUSER $HOME/bin $HOME/bin
 COPY --from=builder --chown=$APPUSER:$APPUSER $HOME/$DIR_NAME $HOME/$DIR_NAME
-COPY --from=builder --chown=$APPUSER:$APPUSER $HOME/esm $HOME/esm
 WORKDIR $HOME/$DIR_NAME
 
 # Set the environment variables
@@ -58,15 +68,8 @@ RUN micromamba shell init -s bash --root-prefix $MAMBA_ROOT_PREFIX
 # Precompute series for SO(2) and SO(3) groups
 RUN micromamba run -n ${ENV_NAME} python utils/precompute_series.py
 
-# Add the benchmark script
-COPY --chown=$APPUSER:$APPUSER run_benchmark.sh $HOME/$DIR_NAME/run_benchmark.sh
-RUN chmod +x $HOME/$DIR_NAME/run_benchmark.sh
+# Expose port for FastAPI
+EXPOSE 8000
 
-# Expose ports for streamlit and gradio
-EXPOSE 7860 8501
-
-# Ensure environment activation in interactive shell for the appuser
-RUN echo "source ~/.bashrc && micromamba activate diffdock" >> $HOME/.bashrc
-
-# Default command
-CMD ["sh", "-c", "micromamba run -n ${ENV_NAME} ./run_benchmark.sh"]
+# Default command to run the FastAPI application
+CMD ["sh", "-c", "micromamba run -n ${ENV_NAME} uvicorn diffdock_api:app --host 0.0.0.0 --port 8000"]
