@@ -1,7 +1,17 @@
 # Stage 1: Build Environment Setup
 FROM nvidia/cuda:11.7.1-devel-ubuntu22.04 as builder
 
-RUN apt-get update -y && apt-get install -y wget curl git tar bzip2 unzip && rm -rf /var/lib/apt/lists/*
+# Install necessary packages and dependencies
+RUN apt-get update -y && apt-get install -y \
+    wget \
+    curl \
+    git \
+    tar \
+    bzip2 \
+    unzip \
+    build-essential \
+    gcc-9 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create a user
 ENV APPUSER="appuser"
@@ -10,39 +20,35 @@ RUN useradd -m -u 1000 $APPUSER
 USER $APPUSER
 WORKDIR $HOME
 
-ENV ENV_NAME="diffdock"
-ENV DIR_NAME="DiffDock"
-
 # Install micromamba
 RUN curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj bin/micromamba
 ENV PATH=$HOME/bin:$HOME/.local/bin:$PATH
 
-# Create a basic environment with packaging installed
-RUN ~/bin/micromamba create -n base_env python=3.9 pip && \
-    ~/bin/micromamba run -n base_env pip install packaging && \
-    ~/bin/micromamba env export -n base_env --file base_env.yml && \
-    rm -rf ~/micromamba/envs/base_env
+# Create the Conda environment and install setuptools and packaging first
+RUN ~/bin/micromamba create -n mydiffdock -c conda-forge python=3.9.18 pip && \
+    ~/bin/micromamba run -n mydiffdock pip install setuptools packaging
 
-# Copy the environment file and create the Conda environment
-COPY --chown=$APPUSER:$APPUSER ./environment.yml environment.yml
-COPY --chown=$APPUSER:$APPUSER ./requirements.txt .
+# Install specific PyTorch and related packages using micromamba and pip
+RUN ~/bin/micromamba run -n mydiffdock micromamba install -c pytorch -c nvidia -c conda-forge pytorch==1.13.0 pytorch-cuda=11.7 mkl=2024.0.0 cudatoolkit-dev && \
+    ~/bin/micromamba run -n mydiffdock pip install torch-scatter==2.0.9 torch-sparse==0.6.15 torch-cluster==1.6.0 torch-spline-conv==1.2.1 torch-geometric==2.0.4 -f https://data.pyg.org/whl/torch-1.13.0+cu117.html
 
-# Install the packaging module first
-RUN ~/bin/micromamba env update --name base --file base_env.yml && \
-    ~/bin/micromamba env create --file environment.yml && \
-    ~/bin/micromamba run -n ${ENV_NAME} pip install packaging
+# Explicitly install the packaging module to avoid import errors
+RUN ~/bin/micromamba run -n mydiffdock pip install packaging
+# Copy the environment file
+COPY --chown=$APPUSER:$APPUSER ./mydiffdock2.yml mydiffdock2.yml
 
-# Install other pip packages
-RUN ~/bin/micromamba run -n ${ENV_NAME} pip install -r requirements.txt
+# Install the dependencies specified in mydiffdock.yml
+RUN ~/bin/micromamba run -n mydiffdock micromamba install -y -n mydiffdock -f mydiffdock2.yml && \
+    ~/bin/micromamba clean -afy --quiet
 
 # Clean up micromamba cache
 RUN ~/bin/micromamba clean -afy --quiet
 
 # Copy application code
-COPY --chown=$APPUSER:$APPUSER . $HOME/$DIR_NAME
+COPY --chown=$APPUSER:$APPUSER . $HOME/DiffDock
 
 # Stage 2: Runtime Environment
-FROM nvidia/cuda:11.7.1-runtime-ubuntu22.04
+FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
 
 # Create user and setup environment
 ENV APPUSER="appuser"
@@ -51,7 +57,7 @@ RUN useradd -m -u 1000 $APPUSER
 USER $APPUSER
 WORKDIR $HOME
 
-ENV ENV_NAME="diffdock"
+ENV ENV_NAME="mydiffdock"
 ENV DIR_NAME="DiffDock"
 
 # Copy the Conda environment and application code from the builder stage
