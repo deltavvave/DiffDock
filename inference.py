@@ -7,7 +7,7 @@ import copy
 import os
 from functools import partial
 import warnings
-from typing import Mapping, Optional
+from typing import Mapping, Optional 
 
 import yaml
 
@@ -130,7 +130,7 @@ def main(args):
                 logger.info(f"Attempting download from {remote_url}")
                 files_downloaded = download_and_extract(remote_url, os.path.dirname(args.model_dir))
                 if not files_downloaded:
-                    logger.info(f"Download from {remote_url} failed.")
+                    logger.info(f"Download from     {remote_url} failed.")
                     continue
                 logger.info(f"Downloaded and extracted {len(files_downloaded)} files from {remote_url}")
                 downloaded_successfully = True

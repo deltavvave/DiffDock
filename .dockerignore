@@ -1,6 +1,6 @@
 # Ignore hidden files and folders
 **/.*
-.DS_store
+.DS_Store
 
 # Ignore git directories (redundant)
 .git
@@ -10,13 +10,17 @@
 results/*
 tmp/
 
+# Ignore data cache directory
+data/cache_torsion_allatoms/
+
 # Ignore trained models
-workdir/*
+#workdir/*
 
 # Do not include PDBBind files
 # (quite likely they are in the same directory)
 **/pdbbind_sequences.fasta
 **/PDBBind_processed/
+**/pdbbind_embeddings.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -43,8 +47,6 @@ wheels/
 MANIFEST
 
 # PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
 
@@ -122,7 +124,8 @@ venv.bak/
 local_config_inference2.yml
 .vscode/
 
-
+# Ignore zip files
 *.zip
 
+# Ignore IDE settings
 .idea/

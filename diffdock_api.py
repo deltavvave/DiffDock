@@ -1,31 +1,77 @@
-#diffdock_api.py
-from fastapi import FastAPI, BackgroundTasks, File, UploadFile, Form
+import traceback
+from fastapi import FastAPI, UploadFile, Form, HTTPException, Query, Path, File
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
-from inference_task import run_inference_task, progress_dict, zip_output_files
-from schemas import InferenceInput, InferenceConfig, InferenceRequest
+from fastapi.middleware.cors import CORSMiddleware
+import asyncio
 import uuid
 import os
 from zipfile import ZipFile
 import io
 import json
+import logging
+from pydantic import BaseModel
+from inference_task import run_inference_task, zip_output_files, process_zip_and_run_inference, tasks
+from schemas import InferenceInput, InferenceConfig
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['*'],
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*']
+)
+
+STORAGE_PATH = 'storage'
 
 class InferenceRequest(BaseModel):
     input: InferenceInput
     config: InferenceConfig
 
-@app.post("/inference/")
-async def start_inference(request: InferenceRequest, background_tasks: BackgroundTasks):
-    task_id = str(uuid.uuid4())
-    background_tasks.add_task(run_inference_task, task_id, request.input, request.config, background_tasks)
-    return JSONResponse(content={"message": "Inference process started successfully", "task_id": task_id, "args": request.config.dict()})
+@app.get('/ping')
+def ping():
+    return JSONResponse(status_code=200, content={'message': 'pong'})
 
-@app.get("/inference/progress/{task_id}")
-async def get_inference_progress(task_id: str):
-    progress = progress_dict.get(task_id, "No such task")
-    return JSONResponse(content={"task_id": task_id, "progress": progress})
+CONFIG_PATH = 'configs/args.json'
+def get_config():
+    with open(CONFIG_PATH, 'r') as jf:
+        return json.load(jf)
+
+@app.post("/inference/")
+async def start_inference(
+    pdb_file: UploadFile = File(...),
+    sdf_file: UploadFile = File(...),
+    inference_steps: int = Form(20),
+    samples_per_complex: int = Form(10)
+):
+    task_id = str(uuid.uuid4())
+    tasks[task_id] = {'task_id': task_id, 'status': 'queued'}
+
+    loop = asyncio.get_event_loop()
+    
+    protein_path = f"/tmp/{task_id}_protein.pdb"
+    ligand_description = f"/tmp/{task_id}_ligand.sdf"
+    
+    with open(protein_path, "wb") as buffer:
+        buffer.write(await pdb_file.read())
+    
+    with open(ligand_description, "wb") as buffer:
+        buffer.write(await sdf_file.read())
+    
+    inference_input = InferenceInput(protein_path=protein_path, ligand_description=ligand_description)
+    inference_config = InferenceConfig(inference_steps=inference_steps, samples_per_complex=samples_per_complex)
+    
+    tasks[task_id]['status'] = 'running'
+    loop.create_task(run_inference_task(task_id, inference_input, inference_config))
+    return JSONResponse(content={"message": "Inference process started successfully", "task_id": task_id, "args": inference_config.dict()})
+
+@app.get("/inference/status/{task_id}")
+async def get_inference_status(task_id: str):
+    task = tasks.get(task_id, {"status": "No such task"})
+    return JSONResponse(content={"task_id": task_id, "status": task.get('status'), "error": task.get('error')})
 
 @app.get("/inference/download/{task_id}")
 async def download_results(task_id: str):
@@ -34,24 +80,17 @@ async def download_results(task_id: str):
     if not os.path.exists(output_folder):
         return {"error": "Task ID not found"}
     
-    zip_stream = io.BytesIO()
-    with ZipFile(zip_stream, 'w') as zip_file:
-        for subfolder in os.listdir(output_folder):
-            subfolder_path = os.path.join(output_folder, subfolder)
-            if os.path.isdir(subfolder_path):
-                for generated_file in os.listdir(subfolder_path):
-                    generated_file_path = os.path.join(subfolder_path, generated_file)
-                    zip_file.write(generated_file_path, os.path.basename(generated_file_path))
-                    
-    zip_stream.seek(0)
+    zip_stream = zip_output_files(task_id, output_folder)
     headers = {
         "Content-Disposition": f"attachment; filename={task_id}_output.zip"
     }
     return StreamingResponse(zip_stream, media_type='application/zip', headers=headers)
 
 @app.post("/inference/zip/")
-async def start_inference_from_zip(zip_file: UploadFile, background_tasks: BackgroundTasks, config: str = Form(...),):
+async def start_inference_from_zip(zip_file: UploadFile, config: str = Form(...)):
     task_id = str(uuid.uuid4())
+    tasks[task_id] = {'task_id': task_id, 'status': 'queued'}
+
     zip_path = f"/tmp/{task_id}.zip"
     
     with open(zip_path, "wb") as buffer:
@@ -60,22 +99,6 @@ async def start_inference_from_zip(zip_file: UploadFile, background_tasks: Backg
     config_data = json.loads(config)
     inference_config = InferenceConfig(**config_data)
     
-    background_tasks.add_task(process_zip_and_run_inference, task_id, zip_path, inference_config)
+    loop = asyncio.get_event_loop()
+    loop.create_task(process_zip_and_run_inference(task_id, zip_path, inference_config))
     return JSONResponse(content={"message": "Inference process started successfully for zip file", "task_id": task_id})
-
-async def process_zip_and_run_inference(task_id: str, zip_path: str, config: InferenceConfig): #TODO check precise processing from agent call
-    with ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(f"/tmp/{task_id}")
-
-    input_dir = f"/tmp/{task_id}"
-    pdb_files = [f for f in os.listdir(input_dir) if f.endswith('.pdb')]
-    sdf_files = [f for f in os.listdir(input_dir) if f.endswith('.sdf')]
-
-    for pdb_file in pdb_files:
-        corresponding_sdf = pdb_file.replace('.pdb', '.sdf')
-        if corresponding_sdf in sdf_files:
-            inference_input = InferenceInput(
-                protein_path=os.path.join(input_dir, pdb_file),
-                ligand_description=os.path.join(input_dir, corresponding_sdf)
-            )
-            await run_inference_task(task_id, inference_input, config, None)
