@@ -72,11 +72,50 @@ This repository contains a FastAPI application for running DiffDock inference ta
 - **Method**: `POST`
 - **Content-Type**: `multipart/form-data`
 - **Form Data**:
-  - `pdb_file`: The PDB file for the protein.
-  - `sdf_file`: The SDF file for the ligand.
-  - `inference_steps`: The number of inference steps.
-  - `samples_per_complex`: The number of samples per complex.
+    - `pdb_file`: The PDB file of the protein
+    - `sdf_file`: The SDF file of the ligand
+    - `inference_steps`: The number of inference steps (default: 20)
+    - `samples_per_complex`: The number of samples per complex (default: 10)
 
-### Example:
-```sh
-curl -X POST "http://127.0.0.1:8000/inference/" -F "pdb_file=@examples/1a46_protein_processed.pdb" -F "sdf_file=@examples/1a46_ligand.sdf" -F "inference_steps=20" -F "samples_per_complex=10"
+### Start Inference from Zip
+
+- **URL**: `/inference/zip/`
+- **Method**: `POST`
+- **Content-Type**: `multipart/form-data`
+- **Form Data**:
+    - `zip_file`: The zip file containing `.pdb` and `.sdf` files
+    - `config`: JSON string of the inference configuration
+
+### Check Progress
+
+- **URL**: `/inference/status/{task_id}`
+- **Method**: `GET`
+- **Response**:
+    ```json
+    {
+        "task_id": "your_task_id",
+        "status": "Progress status or message"
+    }
+    ```
+
+### Download Results
+
+- **URL**: `/inference/download/{task_id}`
+- **Method**: `GET`
+- **Response**: A zip file containing the inference results.
+
+## Testing
+
+1. **Run the Normal Inference Test**:
+    ```sh
+    python test_script.py
+    ```
+
+2. **Run the Zip Inference Test**:
+    ```sh
+    python test_script_zip.py
+    ```
+
+## License
+
+This project is licensed under the MIT License.
