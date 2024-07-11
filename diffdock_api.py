@@ -65,7 +65,7 @@ async def start_inference(
     inference_config = InferenceConfig(inference_steps=inference_steps, samples_per_complex=samples_per_complex)
     
     tasks[task_id]['status'] = 'running'
-    loop.create_task(run_inference_task(task_id, inference_input, inference_config))
+    loop.run_in_executor(None,run_inference_task,task_id, inference_input, inference_config)
     return JSONResponse(content={"message": "Inference process started successfully", "task_id": task_id, "args": inference_config.dict()})
 
 @app.get('/inference/status/{task_id}')

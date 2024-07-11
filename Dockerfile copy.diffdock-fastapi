@@ -1,15 +1,18 @@
 FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
 
+# Set environment variables
+ENV APPUSER="appuser"
+ENV HOME=/home/$APPUSER
+ENV ENV_NAME="mydiffdock"
+ENV DIR_NAME="DiffDock"
+ENV MAMBA_ROOT_PREFIX=$HOME/micromamba
+ENV PATH=$HOME/bin:$HOME/.local/bin:$PATH
+
 # Install necessary packages and micromamba
 RUN apt-get update -y && apt-get install -y \
     wget curl git build-essential gcc-9 \
     && rm -rf /var/lib/apt/lists/* \
     && curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj bin/micromamba
-
-# Set environment variables
-ENV ENV_NAME="mydiffdock"
-ENV MAMBA_ROOT_PREFIX="/opt/conda"
-ENV PATH="/opt/conda/bin:$PATH"
 
 # Create Conda environment and install dependencies
 COPY ./mydiffdock2.yml /tmp/mydiffdock2.yml
@@ -19,8 +22,8 @@ RUN micromamba create -n $ENV_NAME -f /tmp/mydiffdock2.yml \
     && micromamba clean -afy --quiet
 
 # Copy application code
-WORKDIR /app
-COPY . .
+COPY . $HOME/$DIR_NAME
+WORKDIR $HOME/$DIR_NAME
 
 # Initialize micromamba and precompute series
 RUN micromamba shell init -s bash --root-prefix $MAMBA_ROOT_PREFIX \
@@ -29,5 +32,9 @@ RUN micromamba shell init -s bash --root-prefix $MAMBA_ROOT_PREFIX \
 # Expose port for FastAPI
 EXPOSE 8000
 
+# Create user results directory
+RUN mkdir -p /home/appuser/DiffDock/results/user_inference && \
+    chmod 777 /home/appuser/DiffDock/results/user_inference
+
 # Default command to run the FastAPI application
-CMD ["micromamba", "run", "-n", "mydiffdock", "uvicorn", "diffdock_api:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["sh", "-c", "micromamba run -n ${ENV_NAME} uvicorn diffdock_api:app --host 0.0.0.0 --port 8000 --reload"]

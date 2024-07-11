@@ -69,8 +69,7 @@ async def process_zip_and_run_inference(task_id: str, zip_path: str, config: Inf
         tasks[task_id]['status'] = 'failed'
         tasks[task_id]['error'] = str(e)
         raise
-
-async def run_inference_task(task_id: str, input: InferenceInput, config: InferenceConfig):
+def run_inference_task(task_id: str, input: InferenceInput, config: InferenceConfig):
     configure_logger(config.loglevel)
     logger = get_logger()
     try:
