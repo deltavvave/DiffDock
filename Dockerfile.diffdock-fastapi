@@ -1,81 +1,40 @@
-# Stage 1: Build Environment Setup
-FROM nvidia/cuda:11.7.1-devel-ubuntu22.04 as builder
-
-# Install necessary packages and dependencies
-RUN apt-get update -y && apt-get install -y \
-    wget \
-    curl \
-    git \
-    tar \
-    bzip2 \
-    unzip \
-    build-essential \
-    gcc-9 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create a user
-ENV APPUSER="appuser"
-ENV HOME=/home/$APPUSER
-RUN useradd -m -u 1000 $APPUSER
-USER $APPUSER
-WORKDIR $HOME
-
-# Install micromamba
-RUN curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj bin/micromamba
-ENV PATH=$HOME/bin:$HOME/.local/bin:$PATH
-
-# Create the Conda environment and install setuptools and packaging first
-RUN ~/bin/micromamba create -n mydiffdock -c conda-forge python=3.9.18 pip && \
-    ~/bin/micromamba run -n mydiffdock pip install setuptools packaging
-
-# Install specific PyTorch and related packages using micromamba and pip
-RUN ~/bin/micromamba run -n mydiffdock micromamba install -c pytorch -c nvidia -c conda-forge pytorch==1.13.0 pytorch-cuda=11.7 mkl=2024.0.0 cudatoolkit-dev && \
-    ~/bin/micromamba run -n mydiffdock pip install torch-scatter==2.1.0+pt113cu117 torch-sparse==0.6.15 torch-cluster==1.6.0 torch-spline-conv==1.2.1 torch-geometric==2.0.4 -f https://data.pyg.org/whl/torch-1.13.0+cu117.html
-
-# Explicitly install the packaging module to avoid import errors
-RUN ~/bin/micromamba run -n mydiffdock pip install packaging
-# Copy the environment file
-COPY --chown=$APPUSER:$APPUSER ./mydiffdock2.yml mydiffdock2.yml
-
-# Install the dependencies specified in mydiffdock.yml
-RUN ~/bin/micromamba run -n mydiffdock micromamba install -y -n mydiffdock -f mydiffdock2.yml && \
-    ~/bin/micromamba clean -afy --quiet
-
-# Clean up micromamba cache
-RUN ~/bin/micromamba clean -afy --quiet
-
-# Copy application code
-COPY --chown=$APPUSER:$APPUSER . $HOME/DiffDock
-
-# Stage 2: Runtime Environment
 FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
 
-# Create user and setup environment
+# Set environment variables
 ENV APPUSER="appuser"
 ENV HOME=/home/$APPUSER
-RUN useradd -m -u 1000 $APPUSER
-USER $APPUSER
-WORKDIR $HOME
-
 ENV ENV_NAME="mydiffdock"
 ENV DIR_NAME="DiffDock"
-
-# Copy the Conda environment and application code from the builder stage
-COPY --from=builder --chown=$APPUSER:$APPUSER $HOME/micromamba $HOME/micromamba
-COPY --from=builder --chown=$APPUSER:$APPUSER $HOME/bin $HOME/bin
-COPY --from=builder --chown=$APPUSER:$APPUSER $HOME/$DIR_NAME $HOME/$DIR_NAME
-WORKDIR $HOME/$DIR_NAME
-
-# Set the environment variables
 ENV MAMBA_ROOT_PREFIX=$HOME/micromamba
 ENV PATH=$HOME/bin:$HOME/.local/bin:$PATH
-RUN micromamba shell init -s bash --root-prefix $MAMBA_ROOT_PREFIX
 
-# Precompute series for SO(2) and SO(3) groups
-RUN micromamba run -n ${ENV_NAME} python utils/precompute_series.py
+# Install necessary packages and micromamba
+RUN apt-get update -y && apt-get install -y \
+    wget curl git build-essential gcc-9 \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj bin/micromamba
+
+# Create Conda environment and install dependencies
+COPY ./mydiffdock2.yml /tmp/mydiffdock2.yml
+RUN micromamba create -n $ENV_NAME -f /tmp/mydiffdock2.yml \
+    && micromamba run -n $ENV_NAME pip install setuptools packaging \
+    && micromamba run -n $ENV_NAME pip install torch-scatter==2.1.0+pt113cu117 torch-sparse==0.6.15 torch-cluster==1.6.0 torch-spline-conv==1.2.1 torch-geometric==2.0.4 -f https://data.pyg.org/whl/torch-1.13.0+cu117.html \
+    && micromamba clean -afy --quiet
+
+# Copy application code
+COPY . $HOME/$DIR_NAME
+WORKDIR $HOME/$DIR_NAME
+
+# Initialize micromamba and precompute series
+RUN micromamba shell init -s bash --root-prefix $MAMBA_ROOT_PREFIX \
+    && micromamba run -n $ENV_NAME python utils/precompute_series.py
 
 # Expose port for FastAPI
 EXPOSE 8000
 
+# Create user results directory
+RUN mkdir -p /home/appuser/DiffDock/results/user_inference && \
+    chmod 777 /home/appuser/DiffDock/results/user_inference
+
 # Default command to run the FastAPI application
-CMD ["sh", "-c", "micromamba run -n ${ENV_NAME} uvicorn diffdock_api:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "micromamba run -n ${ENV_NAME} uvicorn diffdock_api:app --host 0.0.0.0 --port 8000 --reload"]

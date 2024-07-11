@@ -233,15 +233,23 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
                     re_order = np.argsort(confidence)[::-1]
                     confidence = confidence[re_order]
                     ligand_pos = ligand_pos[re_order]
+                    write_dir = f'{config.out_dir}/{task_id}'
+                    os.makedirs(write_dir, exist_ok=True)
+                    logger.debug(f"Created directory: {write_dir}")
 
-                write_dir = f'{config.out_dir}/{test_dataset.complex_names[idx]}'
-                for rank, pos in enumerate(ligand_pos):
-                    mol_pred = copy.deepcopy(lig)
-                    if score_model_args.remove_hs:
-                        mol_pred = RemoveAllHs(mol_pred)
-                    if rank == 0:
-                        write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}.sdf'))
-                    write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}_confidence{confidence[rank]:.2f}.sdf'))
+                    try:
+                        for rank, pos in enumerate(ligand_pos):
+                            mol_pred = copy.deepcopy(lig)
+                            if score_model_args.remove_hs:
+                                mol_pred = RemoveAllHs(mol_pred)
+                            output_file = os.path.join(write_dir, f'rank{rank+1}_confidence{confidence[rank]:.2f}.sdf')
+                            write_mol_with_coords(mol_pred, pos, output_file)
+                            logger.debug(f"Wrote file: {output_file}")
+                    except Exception as e:
+                        logger.error(f"Error writing output files: {str(e)}")
+                        tasks[task_id]['status'] = 'failed'
+                        tasks[task_id]['error'] = f"Error writing output files: {str(e)}"
+                        return
 
                 if config.save_visualisation:
                     if confidence is not None:
@@ -275,12 +283,11 @@ async def run_inference_task(task_id: str, input: InferenceInput, config: Infere
 def zip_output_files(task_id: str, output_folder: str):
     zip_stream = io.BytesIO()
     with ZipFile(zip_stream, 'w') as zip_file:
-        for subfolder in os.listdir(output_folder):
-            subfolder_path = os.path.join(output_folder, subfolder)
-            if os.path.isdir(subfolder_path):
-                for generated_file in os.listdir(subfolder_path):
-                    generated_file_path = os.path.join(subfolder_path, generated_file)
-                    zip_file.write(generated_file_path, os.path.relpath(generated_file_path, output_folder))
-
+        for root, dirs, files in os.walk(output_folder):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, output_folder)
+                zip_file.write(file_path, arcname)
+    
     zip_stream.seek(0)
     return zip_stream

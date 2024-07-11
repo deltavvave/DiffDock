@@ -68,23 +68,55 @@ async def start_inference(
     loop.create_task(run_inference_task(task_id, inference_input, inference_config))
     return JSONResponse(content={"message": "Inference process started successfully", "task_id": task_id, "args": inference_config.dict()})
 
-@app.get("/inference/status/{task_id}")
-async def get_inference_status(task_id: str):
-    task = tasks.get(task_id, {"status": "No such task"})
-    return JSONResponse(content={"task_id": task_id, "status": task.get('status'), "error": task.get('error')})
+@app.get('/inference/status/{task_id}')
+def get_inference_status(task_id: str = Path(...)):
+    logging.info('tasks' * 100)
+    logging.info('tasks')
+    logging.info(tasks)
+    logging.info('tasks' * 100)
+    
+    task = tasks.get(task_id, None)
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    return JSONResponse(status_code=200, content=task)
 
 @app.get("/inference/download/{task_id}")
 async def download_results(task_id: str):
+    logger.debug(f"Download requested for task {task_id}")
     output_folder = f"results/user_inference/{task_id}"
+    logger.debug(f"Checking output folder: {output_folder}")
     
     if not os.path.exists(output_folder):
-        return {"error": "Task ID not found"}
+        logger.error(f"Output folder not found: {output_folder}")
+        parent_folder = os.path.dirname(output_folder)
+        logger.debug(f"Contents of parent folder {parent_folder}:")
+        for item in os.listdir(parent_folder):
+            logger.debug(f"  {item}")
+        return JSONResponse(content={"error": "Task results not found"}, status_code=404)
     
-    zip_stream = zip_output_files(task_id, output_folder)
-    headers = {
-        "Content-Disposition": f"attachment; filename={task_id}_output.zip"
-    }
-    return StreamingResponse(zip_stream, media_type='application/zip', headers=headers)
+    # List contents of the directory
+    logger.debug(f"Contents of {output_folder}:")
+    for root, dirs, files in os.walk(output_folder):
+        for file in files:
+            logger.debug(f"  {os.path.join(root, file)}")
+    
+    try:
+        zip_stream = zip_output_files(task_id, output_folder)
+        zip_size = zip_stream.getbuffer().nbytes
+        logger.debug(f"Zip file created, size: {zip_size} bytes")
+        
+        headers = {
+            "Content-Disposition": f"attachment; filename={task_id}_output.zip",
+            "Content-Length": str(zip_size),
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+        return StreamingResponse(zip_stream, media_type='application/zip', headers=headers)
+    except Exception as e:
+        logger.error(f"Error zipping output files for task {task_id}: {str(e)}")
+        return JSONResponse(content={"error": f"Error preparing download: {str(e)}"}, status_code=500)
 
 @app.post("/inference/zip/")
 async def start_inference_from_zip(zip_file: UploadFile, config: str = Form(...)):

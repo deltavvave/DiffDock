@@ -13,12 +13,12 @@ This repository contains a FastAPI application for running DiffDock inference ta
 
 1. **Build the Docker Image**:
     ```sh
-    docker build -t diffdock-fastapi -f Dockerfile.diffdock-fastapi .
+    docker build -t diffdock-fastapi -f Dockerfile_copy.diffdock-fastapi .
     ```
 
 2. **Run the Docker Container**:
     ```sh
-    docker run -d -p 8000:8000 diffdock-fastapi
+    docker run -d -p 8000:8000 --gpus all diffdock-fastapi
     ```
 
 ### Multi-Container Setup (Optional)
