@@ -1,7 +1,8 @@
 import traceback
-from fastapi import FastAPI, UploadFile, Form, HTTPException, Query, Path, File
+from fastapi import FastAPI, UploadFile, Form, HTTPException, Query, Path, File,Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
 import asyncio
 import uuid
 import os
@@ -12,6 +13,8 @@ import logging
 from pydantic import BaseModel
 from inference_task import run_inference_task, zip_output_files, process_zip_and_run_inference, tasks
 from schemas import InferenceInput, InferenceConfig
+import argparse
+import pandas as pd 
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -40,34 +43,150 @@ def get_config():
     with open(CONFIG_PATH, 'r') as jf:
         return json.load(jf)
 
+# @app.post("/inference/")
+# async def start_inference(
+#     pdb_file: UploadFile = File(...),
+#     config: dict = Depends(get_config),
+#     body: Optional[str]  = Form(...),
+#     # inference_steps: int = Form(20),
+#     # samples_per_complex: int = Form(10)
+# ):
+#     task_id = str(uuid.uuid4())
+#     tasks[task_id] = {'task_id': task_id, 'status': 'queued'}
+
+#     loop = asyncio.get_event_loop()
+    
+#     protein_path = f"/tmp/{task_id}_protein.pdb"
+#     ligand_description = f"/tmp/{task_id}_ligand.sdf"
+    
+#     with open(protein_path, "wb") as buffer:
+#         buffer.write(await pdb_file.read())
+    
+#     with open(ligand_description, "wb") as buffer:
+#         buffer.write(await sdf_file.read())
+    
+#     arg_dict = json.loads(body)
+#     args = InferenceConfig(**arg_dict)
+#     default_args = config 
+#     provided_args = args.dict(exclude_unset=True)
+#     arguments = {**default_args, **provided_args}
+#     logging.info('-' * 100)
+#     arguments = argparse.Namespace(**arguments)
+#     logging.info(arguments)
+#     logging.info('-' * 100)
+#     inference_input = InferenceInput(protein_path=protein_path, ligand_description=ligand_description)
+#     # inference_config = InferenceConfig(inference_steps=inference_steps, samples_per_complex=samples_per_complex)
+    
+#     tasks[task_id]['status'] = 'running'
+#     loop.run_in_executor(None,run_inference_task,task_id, inference_input, arguments)
+#     return JSONResponse(content={"message": "Inference process started successfully", "task_id": task_id})
+
+# storage = 'storage'
+# @app.post("/inference/")
+# async def start_inference(
+#     pdb_file: UploadFile = File(...),
+#     config: dict = Depends(get_config),
+#     body: str = Form(...)
+# ):
+#     try:
+#         task_id = str(uuid.uuid4())
+#         tasks[task_id] = {'task_id': task_id, 'status': 'queued'}
+
+#         loop = asyncio.get_event_loop()
+        
+#         protein_dir = f"{storage}/{task_id}"
+#         os.makedirs(protein_dir, exist_ok=True)
+#         protein_path = os.path.join(protein_dir, "protein.pdb")
+#         csv_path = os.path.join(protein_dir, "input.csv")
+#         with open(protein_path, "wb") as buffer:
+#             buffer.write(await pdb_file.read())
+#          # Parse body and merge with default config
+#         arg_dict = json.loads(body)
+#         args = InferenceConfig(**arg_dict)
+
+#         smiles = arg_dict['smiles']
+#         # Create the CSV file
+#         data = {
+#             'complex_name': [f"complex_{i}" for i in range(len(smiles))],
+#             'protein_path': [protein_path] * len(smiles),
+#             'ligand_description': smiles,
+#             'protein_sequence': [None] * len(smiles)  # Assuming no protein sequence is provided
+#         }
+#         df = pd.DataFrame(data)
+#         df.to_csv(csv_path, index=False)
+
+
+#         default_args = config
+#         provided_args = args.dict(exclude_unset=True)
+#         arguments = {**default_args, **provided_args, 'protein_ligand_csv':csv_path}
+#         logging.info('-' * 100)
+#         arguments = argparse.Namespace(**arguments)
+#         logging.info(arguments)
+#         logging.info('-' * 100)
+        
+#         tasks[task_id]['status'] = 'running'
+#         loop.run_in_executor(None, run_inference_task, task_id, arguments)
+#         return JSONResponse(content={"message": "Inference process started successfully", "task_id": task_id})
+
+#     except Exception as e:
+#         logging.exception(f'An exception occurred: {str(e)}')
+#         return JSONResponse(status_code=500, content={'error': "An error occurred while processing your request", "detail": str(e)})
+
+storage = 'storage'
+
 @app.post("/inference/")
 async def start_inference(
     pdb_file: UploadFile = File(...),
-    sdf_file: UploadFile = File(...),
-    inference_steps: int = Form(20),
-    samples_per_complex: int = Form(10)
+    config: dict = Depends(get_config),
+    body: str = Form(...)
 ):
-    task_id = str(uuid.uuid4())
-    tasks[task_id] = {'task_id': task_id, 'status': 'queued'}
+    try:
+        task_id = str(uuid.uuid4())
+        tasks[task_id] = {'task_id': task_id, 'status': 'queued'}
 
-    loop = asyncio.get_event_loop()
-    
-    protein_path = f"/tmp/{task_id}_protein.pdb"
-    ligand_description = f"/tmp/{task_id}_ligand.sdf"
-    
-    with open(protein_path, "wb") as buffer:
-        buffer.write(await pdb_file.read())
-    
-    with open(ligand_description, "wb") as buffer:
-        buffer.write(await sdf_file.read())
-    
-    inference_input = InferenceInput(protein_path=protein_path, ligand_description=ligand_description)
-    inference_config = InferenceConfig(inference_steps=inference_steps, samples_per_complex=samples_per_complex)
-    
-    tasks[task_id]['status'] = 'running'
-    loop.run_in_executor(None,run_inference_task,task_id, inference_input, inference_config)
-    return JSONResponse(content={"message": "Inference process started successfully", "task_id": task_id, "args": inference_config.dict()})
+        loop = asyncio.get_event_loop()
+        
+        protein_dir = f"{storage}/{task_id}"
+        os.makedirs(protein_dir, exist_ok=True)
+        protein_path = os.path.join(protein_dir, "protein.pdb")
+        csv_path = os.path.join(protein_dir, "input.csv")
+        
+        # Save the uploaded protein file
+        with open(protein_path, "wb") as buffer:
+            buffer.write(await pdb_file.read())
+        
+        # Parse body and merge with default config
+        arg_dict = json.loads(body)
+        args = InferenceConfig(**arg_dict)
 
+        smiles = arg_dict['smiles']
+        
+        # Create the CSV file
+        data = {
+            'complex_name': [f"protein_{i+1}" for i in range(len(smiles))],
+            'protein_path': [protein_path] * len(smiles),
+            'ligand_description': smiles,
+            'protein_sequence': [None] * len(smiles)  # Assuming no protein sequence is provided
+        }
+        df = pd.DataFrame(data)
+        df.to_csv(csv_path, index=False)
+
+        default_args = config
+        provided_args = args.dict(exclude_unset=True)
+        arguments = {**default_args, **provided_args, 'protein_ligand_csv': csv_path}
+        logging.info('-' * 100)
+        arguments = argparse.Namespace(**arguments)
+        logging.info(arguments)
+        logging.info('-' * 100)
+        
+        tasks[task_id]['status'] = 'running'
+        loop.run_in_executor(None, run_inference_task, task_id, arguments)
+        return JSONResponse(content={"message": "Inference process started successfully", "task_id": task_id})
+
+    except Exception as e:
+        logging.exception(f'An exception occurred: {str(e)}')
+        return JSONResponse(status_code=500, content={'error': "An error occurred while processing your request", "detail": str(e)})
+    
 @app.get('/inference/status/{task_id}')
 def get_inference_status(task_id: str = Path(...)):
     logging.info('tasks' * 100)

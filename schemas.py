@@ -1,6 +1,6 @@
 #schemas.py
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, conint
+from typing import Optional, List
 from fastapi import UploadFile
 
 class InferenceInput(BaseModel):
@@ -8,6 +8,42 @@ class InferenceInput(BaseModel):
     protein_sequence: Optional[str] = None
     ligand_description: str
 
+# class InferenceConfig(BaseModel):
+#     actual_steps: Optional[int] = None
+#     ckpt: Optional[str] = None
+#     confidence_ckpt: Optional[str] = None
+#     confidence_model_dir: Optional[str] = None
+#     different_schedules: Optional[bool] = None
+#     inf_sched_alpha: Optional[int] = None
+#     inf_sched_beta: Optional[int] = None
+#     inference_steps: conint(ge=1,le=50) = 20
+#     initial_noise_std_proportion: Optional[float] = None
+#     limit_failures: Optional[int] = None
+#     model_dir: Optional[str] = None
+#     no_final_step_noise: Optional[bool] = None
+#     no_model: Optional[bool] = None
+#     no_random: Optional[bool] = None
+#     no_random_pocket: Optional[bool] = None
+#     ode: Optional[bool] = None
+#     old_confidence_model: Optional[bool] = None
+#     old_score_model: Optional[bool] = None
+#     resample_rdkit: Optional[bool] = None
+#     samples_per_complex: conint(ge=1,le=50) = 10
+#     sigma_schedule: Optional[str] = None
+#     temp_psi_rot: Optional[float] = None
+#     temp_psi_tor: Optional[float] = None
+#     temp_psi_tr: Optional[float] = None
+#     temp_sampling_rot: Optional[float] = None
+#     temp_sampling_tor: Optional[float] = None
+#     temp_sampling_tr: Optional[float] = None
+#     temp_sigma_data_rot: Optional[float] = None
+#     temp_sigma_data_tor: Optional[float] = None
+#     temp_sigma_data_tr: Optional[float] = None
+#     loglevel: Optional[str] = None
+#     choose_residue: Optional[bool] = None
+#     out_dir: Optional[str] = None
+#     save_visualisation: Optional[bool] = None
+#     batch_size: Optional[int] = None
 class InferenceConfig(BaseModel):
     actual_steps: int = 19
     ckpt: str = 'best_ema_inference_epoch_model.pt'
@@ -43,8 +79,46 @@ class InferenceConfig(BaseModel):
     choose_residue: bool = False
     out_dir: str = 'results/user_inference'
     save_visualisation: bool = False
-    batch_size: int = 10
-    
+    batch_size: int = 1
+
+class InferenceConfig(BaseModel):
+    smiles: List[str] 
+    actual_steps: Optional[int] = None
+    ckpt: Optional[str] = None
+    confidence_ckpt: Optional[str] = None
+    confidence_model_dir: Optional[str] = None
+    different_schedules: Optional[bool] = None
+    inf_sched_alpha: Optional[int] = None
+    inf_sched_beta: Optional[int] = None
+    inference_steps: conint(ge=1, le=50) = 20
+    initial_noise_std_proportion: Optional[float] = None
+    limit_failures: Optional[int] = None
+    model_dir: Optional[str] = None
+    no_final_step_noise: Optional[bool] = None
+    no_model: Optional[bool] = None
+    no_random: Optional[bool] = None
+    no_random_pocket: Optional[bool] = None
+    ode: Optional[bool] = None
+    old_confidence_model: Optional[bool] = None
+    old_score_model: Optional[bool] = None
+    resample_rdkit: Optional[bool] = None
+    samples_per_complex: conint(ge=1, le=50) = 10
+    sigma_schedule: Optional[str] = None
+    temp_psi_rot: Optional[float] = None
+    temp_psi_tor: Optional[float] = None
+    temp_psi_tr: Optional[float] = None
+    temp_sampling_rot: Optional[float] = None
+    temp_sampling_tor: Optional[float] = None
+    temp_sampling_tr: Optional[float] = None
+    temp_sigma_data_rot: Optional[float] = None
+    temp_sigma_data_tor: Optional[float] = None
+    temp_sigma_data_tr: Optional[float] = None
+    loglevel: Optional[str] = None
+    choose_residue: Optional[bool] = None
+    out_dir: Optional[str] = None
+    save_visualisation: Optional[bool] = None
+    batch_size: Optional[int] = None
+
 class InferenceRequest(BaseModel):
     input: InferenceInput
     config: InferenceConfig
