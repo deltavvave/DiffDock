@@ -190,6 +190,9 @@ def run_inference_task(task_id: str, config: InferenceConfig):
         logger.info(f'Size of test dataset: {test_ds_size}')
 
         for idx, orig_complex_graph in tqdm(enumerate(test_loader)):
+            logging.info('-'*100)
+            logging.info(f'Doing process for {orig_complex_graph["name"]}')
+            logging.info('-'*100)
             if not orig_complex_graph.success[0]:
                 skipped += 1
                 logger.warning(f"The test dataset did not contain {test_dataset.complex_names[idx]} for {test_dataset.ligand_descriptions[idx]} and {test_dataset.protein_files[idx]}. We are skipping this complex.")
@@ -243,7 +246,7 @@ def run_inference_task(task_id: str, config: InferenceConfig):
                     re_order = np.argsort(confidence)[::-1]
                     confidence = confidence[re_order]
                     ligand_pos = ligand_pos[re_order]
-                    write_dir = f'{config.out_dir}/{task_id}'
+                    write_dir = f'{config.out_dir}/{task_id}/{test_dataset.ligand_descriptions[idx]}'
                     os.makedirs(write_dir, exist_ok=True)
                     logger.debug(f"Created directory: {write_dir}")
 

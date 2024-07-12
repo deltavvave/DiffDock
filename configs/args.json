@@ -31,7 +31,7 @@
    "temp_sigma_data_tr": 0.9299802531572672,
    "loglevel": "WARNING",
    "choose_residue": false,
-   "out_dir": "results/user_inference",
+   "out_dir": "storage/results",
    "save_visualisation": false,
    "batch_size": 1
 }
