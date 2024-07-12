@@ -515,7 +515,7 @@ def zip_output_files(task_id: str, output_folder: str):
         for root, dirs, files in os.walk(output_folder):
             for file in files:
                 file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, output_folder)
+                arcname = os.path.join(task_id, os.path.relpath(file_path, output_folder))
                 zip_file.write(file_path, arcname)
     
     zip_stream.seek(0)

@@ -11,7 +11,7 @@ import io
 import json
 import logging
 from pydantic import BaseModel
-from inference_task import run_inference_task, zip_output_files, process_zip_and_run_inference, tasks
+from inference_task import run_inference_task, tasks, zip_output_files, process_zip_and_run_inference, tasks
 from schemas import InferenceInput, InferenceConfig
 import argparse
 import pandas as pd 
@@ -45,11 +45,64 @@ def get_config():
     
 storage = 'storage/inputs'
 
-@app.post("/inference/")
+# @app.post("/inference")
+# async def start_inference(
+#     file: UploadFile = File(...),
+#     body: str = Form(...),
+#     config: dict = Depends(get_config),
+# ):
+#     try:
+#         task_id = str(uuid.uuid4())
+#         tasks[task_id] = {'task_id': task_id, 'status': 'queued'}
+
+#         loop = asyncio.get_event_loop()
+        
+#         protein_dir = f"{storage}/{task_id}"
+#         os.makedirs(protein_dir, exist_ok=True)
+#         protein_path = os.path.join(protein_dir, "protein.pdb")
+#         csv_path = os.path.join(protein_dir, "input.csv")
+        
+#         # Save the uploaded protein file
+#         with open(protein_path, "wb") as buffer:
+#             buffer.write(await file.read())
+        
+#         # Parse body and merge with default config
+#         arg_dict = json.loads(body)
+#         args = InferenceConfig(**arg_dict)
+
+#         smiles = arg_dict['smiles']
+        
+#         # Create the CSV file
+#         data = {
+#             'complex_name': [f"protein_{i+1}" for i in range(len(smiles))],
+#             'protein_path': [protein_path] * len(smiles),
+#             'ligand_description': smiles,
+#             'protein_sequence': [None] * len(smiles)  # Assuming no protein sequence is provided
+#         }
+#         df = pd.DataFrame(data)
+#         df.to_csv(csv_path, index=False)
+
+#         default_args = config
+#         provided_args = args.dict(exclude_unset=True)
+#         arguments = {**default_args, **provided_args, 'protein_ligand_csv': csv_path}
+#         logging.info('-' * 100)
+#         arguments = argparse.Namespace(**arguments)
+#         logging.info(arguments)
+#         logging.info('-' * 100)
+        
+#         loop.run_in_executor(None, run_inference_task, task_id, arguments)
+#         return JSONResponse(status_code=202, content=task_id[task_id])
+
+#     except Exception as e:
+#         logging.exception(f'An exception occurred: {str(e)}')
+#         return JSONResponse(status_code=500, content={'error': "An error occurred while processing your request", "detail": str(e)})
+
+
+@app.post("/inference")
 async def start_inference(
     file: UploadFile = File(...),
+    body: str = Form(...),
     config: dict = Depends(get_config),
-    body: str = Form(...)
 ):
     try:
         task_id = str(uuid.uuid4())
@@ -67,6 +120,7 @@ async def start_inference(
             buffer.write(await file.read())
         
         # Parse body and merge with default config
+        logging.info(f"Parsing body: {body}")
         arg_dict = json.loads(body)
         args = InferenceConfig(**arg_dict)
 
@@ -85,13 +139,12 @@ async def start_inference(
         default_args = config
         provided_args = args.dict(exclude_unset=True)
         arguments = {**default_args, **provided_args, 'protein_ligand_csv': csv_path}
-        logging.info('-' * 100)
+        logging.info(f"Arguments before Namespace: {arguments}")
         arguments = argparse.Namespace(**arguments)
-        logging.info(arguments)
-        logging.info('-' * 100)
+        logging.info(f"Arguments after Namespace: {arguments}")
         
         loop.run_in_executor(None, run_inference_task, task_id, arguments)
-        return JSONResponse(content={"message": "Inference process started successfully", "task_id": task_id})
+        return JSONResponse(status_code=202, content = tasks[task_id])
 
     except Exception as e:
         logging.exception(f'An exception occurred: {str(e)}')
@@ -142,4 +195,3 @@ async def download_results(task_id: str = Path(...),
     except Exception as e:
         logger.error(f"Error zipping output files for task {task_id}: {str(e)}")
         return JSONResponse(content={"error": f"Error preparing download: {str(e)}"}, status_code=500)
-
