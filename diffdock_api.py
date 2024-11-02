@@ -125,7 +125,9 @@ async def start_inference(
         args = InferenceConfig(**arg_dict)
 
         smiles = arg_dict['smiles']
-        
+        logging.info(f'-'*100)
+        logging.info(f'smiles {smiles}')
+        logging.info(f'-'*100)
         # Create the CSV file
         data = {
             'complex_name': [f"protein_{i+1}" for i in range(len(smiles))],
@@ -139,6 +141,7 @@ async def start_inference(
         default_args = config
         provided_args = args.dict(exclude_unset=True)
         arguments = {**default_args, **provided_args, 'protein_ligand_csv': csv_path}
+        arguments['limit_failures'] = 10
         logging.info(f"Arguments before Namespace: {arguments}")
         arguments = argparse.Namespace(**arguments)
         logging.info(f"Arguments after Namespace: {arguments}")
